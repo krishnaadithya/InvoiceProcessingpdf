@@ -1,0 +1,14 @@
+.env
+result/
+*.pdf
+*.xlsx
+*.xls
+*.doc
+*.docx
+*.txt
+expiry_invoice/
+ignore_code/
+test.ipynb
+__pycache__/
+content/
+.gradio/
