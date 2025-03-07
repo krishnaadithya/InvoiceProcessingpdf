@@ -36,7 +36,7 @@ def setup_google_client():
     """Set up and return the Google Generative AI client."""
     try:
         from google import genai
-        api_key = os.environ.get("GOOGLE_API_KEY")
+        api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             logger.warning("GOOGLE_API_KEY environment variable not set. PDF processing with LLM will not be available.")
             return None
