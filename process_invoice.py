@@ -104,7 +104,6 @@ def process_file(file_path: str) -> None:
     
     file_ext = os.path.splitext(file_path)[1].lower()
     
-    llm_client = setup_google_client()
 
     temp_pdf_path = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf').name
 
