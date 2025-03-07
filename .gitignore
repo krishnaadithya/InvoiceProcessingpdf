@@ -5,7 +5,6 @@ result/
 *.xls
 *.doc
 *.docx
-*.txt
 expiry_invoice/
 ignore_code/
 test.ipynb

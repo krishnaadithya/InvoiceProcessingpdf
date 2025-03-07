@@ -1,0 +1,30 @@
+# Core dependencies
+python-dotenv
+pandas
+numpy
+pydantic
+
+# PDF processing
+pdf2image
+PyMuPDF
+pytesseract
+Pillow
+
+# Document processing
+python-docx
+reportlab
+aspose-words
+
+# Excel processing
+openpyxl
+xlrd
+pyexcel
+pyexcel-xls
+pyexcel-xlsx
+
+# LLM integration
+google-genai
+
+# Web UI
+gradio
+gradio_pdf
