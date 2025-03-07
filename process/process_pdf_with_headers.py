@@ -12,11 +12,7 @@ from PIL import Image
 from dotenv import load_dotenv
 
 
-
-
 load_dotenv()
-
-
 
 
 class InvoiceItem(BaseModel):

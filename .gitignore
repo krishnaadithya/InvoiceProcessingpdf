@@ -12,3 +12,4 @@ test.ipynb
 __pycache__/
 content/
 .gradio/
+*.json

@@ -16,7 +16,8 @@ import tempfile
 from dotenv import load_dotenv
 
 # Import document processing functions
-from process_pdf_with_headers import process_pdf_with_headers
+from process.process_pdf_with_headers import process_pdf_with_headers
+from process.process_excel import process_excel_file
 from src.excel_to_pdf import excel_to_pdf, convert_xls_to_xlsx
 from src.docx_to_pdf import docx_to_pdf
 from src.txt_to_pdf import txt_to_pdf
@@ -110,17 +111,25 @@ def process_file(file_path: str) -> None:
     
     if file_ext in ['.xlsx', '.xls']:
         # Process Excel file
+        # For .xls files, convert to .xlsx format first
         if file_ext == '.xls':
-            file_path = convert_xls_to_xlsx(file_path, temp_pdf_path.replace('.pdf', '.xlsx'))
+            xlsx_path = convert_xls_to_xlsx(file_path)
+            file_path = xlsx_path
         
-        temp_pdf_path = excel_to_pdf(file_path, pdf_path=temp_pdf_path)
-
-        invoice_data_obj = process_pdf_with_headers(temp_pdf_path)
+        # Create output JSON path
+        output_json_path = os.path.join("result", f"{os.path.splitext(os.path.basename(file_path))[0]}.json")
         
-        # Convert the InvoiceData object to the format expected by the rest of the code
+        result = process_excel_file(
+            file_path=file_path,
+            output_path=output_json_path,
+            chunk_size=20,
+            max_workers=2
+        )
+        
+        # Create the expected invoice_data format
         invoice_data = {
-            "headers": invoice_data_obj.headers,
-            "items": [item.model_dump() if hasattr(item, 'model_dump') else item.dict() for item in invoice_data_obj.items]
+            "headers": ["Product Name", "Batch Number", "Expiry Date", "MRP", "Quantity"],
+            "items": result["items"]
         }
 
                                       
@@ -196,7 +205,7 @@ def process_file(file_path: str) -> None:
 def main():
     """Main function to parse arguments and process files."""
     parser = argparse.ArgumentParser(description="Process invoice files (PDF, Excel, XLS)")
-    parser.add_argument("file_path", help="Path to the invoice file")
+    parser.add_argument("--file_path", help="Path to the invoice file")
     
     args = parser.parse_args()
     
