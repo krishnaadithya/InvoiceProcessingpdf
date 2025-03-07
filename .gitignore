@@ -13,3 +13,5 @@ __pycache__/
 content/
 .gradio/
 *.json
+invoiceprocessing/
+invoiceprocessing/*
