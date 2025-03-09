@@ -58,6 +58,7 @@ def convert_to_csv(invoice_data: Dict) -> str:
     for item in items:
         all_keys.update(item.keys())
     
+    
     # Write to CSV
     with open(temp_csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=sorted(all_keys))

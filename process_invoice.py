@@ -14,6 +14,7 @@ from pathlib import Path
 import argparse
 import tempfile
 from dotenv import load_dotenv
+import gc
 
 # Import document processing functions
 from process.process_pdf_with_headers import process_pdf_with_headers
@@ -97,109 +98,134 @@ def process_file(file_path: str) -> None:
     Args:
         file_path: Path to the invoice file
     """
-    file_path = os.path.abspath(file_path)
-    if not os.path.exists(file_path):
-        logger.error(f"File not found: {file_path}")
-        return
+    temp_files = []  # Keep track of temporary files for cleanup
     
-    file_ext = os.path.splitext(file_path)[1].lower()
-    
-
-    temp_pdf_path = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf').name
-
-    
-    if file_ext in ['.xlsx', '.xls']:
-        # Process Excel file
-        # For .xls files, convert to .xlsx format first
-        if file_ext == '.xls':
-            xlsx_path = convert_xls_to_xlsx(file_path)
-            file_path = xlsx_path
+    try:
+        file_path = os.path.abspath(file_path)
+        if not os.path.exists(file_path):
+            logger.error(f"File not found: {file_path}")
+            return
         
-        # Create output JSON path
-        output_json_path = os.path.join("result", f"{os.path.splitext(os.path.basename(file_path))[0]}.json")
+        file_ext = os.path.splitext(file_path)[1].lower()
+        temp_pdf_path = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf').name
+        temp_files.append(temp_pdf_path)
         
-        result = process_excel_file(
-            file_path=file_path,
-            output_path=output_json_path,
-            chunk_size=20,
-            max_workers=2
-        )
-        
-        # Create the expected invoice_data format
-        invoice_data = {
-            "headers": ["Product Name", "Batch Number", "Expiry Date", "MRP", "Quantity"],
-            "items": result["items"]
-        }
-
-                                      
-    elif file_ext == '.pdf':
-    
-        try:
-            logger.info(f"Processing PDF file with header context: {file_path}")
+        if file_ext in ['.xlsx', '.xls']:
+            # Process Excel file
+            if file_ext == '.xls':
+                xlsx_path = convert_xls_to_xlsx(file_path)
+                temp_files.append(xlsx_path)
+                file_path = xlsx_path
             
-            # Process the PDF using process_pdf_with_headers
-            invoice_data_obj = process_pdf_with_headers(file_path)
+            # Create output JSON path
+            output_json_path = os.path.join("result", f"{os.path.splitext(os.path.basename(file_path))[0]}.json")
             
-            # Convert the InvoiceData object to the format expected by the rest of the code
+            result = process_excel_file(
+                file_path=file_path,
+                output_path=output_json_path,
+                chunk_size=20,
+                max_workers=2
+            )
+            
+            # Create the expected invoice_data format
             invoice_data = {
-                "headers": invoice_data_obj.headers,
-                "items": [item.model_dump() if hasattr(item, 'model_dump') else item.dict() for item in invoice_data_obj.items]
+                "headers": ["Product Name", "Batch Number", "Expiry Date", "MRP", "Quantity"],
+                "items": result["items"]
             }
             
-        except Exception as e:
-            logger.error(f"Error processing PDF with headers: {str(e)}")
+            # Clear result from memory
+            result = None
+            gc.collect()
+                                      
+        elif file_ext == '.pdf':
+            try:
+                logger.info(f"Processing PDF file with header context: {file_path}")
                 
-    elif file_ext in ['.doc', '.docx', '.txt']:
-        # Process Document file by first converting to PDF
-        # Ensure the required modules are imported
-        if file_ext == '.txt':
-            temp_pdf_path = txt_to_pdf(file_path, temp_pdf_path)
-            logger.info(f"Converted text file to PDF: {temp_pdf_path}")
-        elif file_ext in ['.doc', '.docx']:
-            temp_pdf_path = docx_to_pdf(file_path, temp_pdf_path)
-            logger.info(f"Converted document file to PDF: {temp_pdf_path}")
+                # Process the PDF using process_pdf_with_headers with optimized batch size
+                invoice_data_obj = process_pdf_with_headers(file_path, max_workers=2, batch_size=2)
+                
+                # Convert the InvoiceData object to the format expected by the rest of the code
+                invoice_data = {
+                    "headers": invoice_data_obj.headers,
+                    "items": [item.model_dump() if hasattr(item, 'model_dump') else item.dict() for item in invoice_data_obj.items]
+                }
+                
+                # Clear the object from memory
+                invoice_data_obj = None
+                gc.collect()
+                
+            except Exception as e:
+                logger.error(f"Error processing PDF with headers: {str(e)}")
+                return
+                
+        elif file_ext in ['.doc', '.docx', '.txt']:
+            # Process Document file by first converting to PDF
+            try:
+                if file_ext == '.txt':
+                    temp_pdf_path = txt_to_pdf(file_path, temp_pdf_path)
+                elif file_ext in ['.doc', '.docx']:
+                    temp_pdf_path = docx_to_pdf(file_path, temp_pdf_path)
+                temp_files.append(temp_pdf_path)
+                logger.info(f"Converted {file_ext} file to PDF: {temp_pdf_path}")
+                
+                invoice_data_obj = process_pdf_with_headers(temp_pdf_path, max_workers=2, batch_size=2)
+                
+                # Convert the InvoiceData object to the format expected by the rest of the code
+                invoice_data = {
+                    "headers": invoice_data_obj.headers,
+                    "items": [item.model_dump() if hasattr(item, 'model_dump') else item.dict() for item in invoice_data_obj.items]
+                }
+                
+                # Clear the object from memory
+                invoice_data_obj = None
+                gc.collect()
+                
+            except Exception as e:
+                logger.error(f"Error converting {file_ext} to PDF: {str(e)}")
+                return
+            
+        else:
+            logger.error(f"Unsupported file format: {file_ext}")
+            logger.error("Supported formats: .pdf, .xlsx, .xls, .doc, .docx, .txt")
+            return
         
-        invoice_data_obj = process_pdf_with_headers(temp_pdf_path)
+        # Save results and clean up
+        json_path = save_to_json(invoice_data, file_path)
+        print(f"Results saved to: {json_path}")
         
-        # Convert the InvoiceData object to the format expected by the rest of the code
-        invoice_data = {
-            "headers": invoice_data_obj.headers,
-            "items": [item.model_dump() if hasattr(item, 'model_dump') else item.dict() for item in invoice_data_obj.items]
-        }
+        # Clear invoice data from memory
+        invoice_data = None
+        gc.collect()
         
-    else:
-        logger.error(f"Unsupported file format: {file_ext}")
-        logger.error("Supported formats: .pdf, .xlsx, .xls, .doc, .docx, .txt")
-        return
+        # Print results from the saved JSON file to avoid keeping data in memory
+        with open(json_path, 'r', encoding='utf-8') as f:
+            saved_data = json.load(f)
+            items_count = len(saved_data.get('items', []))
+            print(f"\nExtracted {items_count} items from {file_path}:")
+            
+            for i, item in enumerate(saved_data.get('items', []), 1):
+                print(f"\nItem {i}:")
+                print(f"  Product: {item.get('product_name', 'N/A')}")
+                print(f"  Batch Number: {item.get('batch_number', 'N/A')}")
+                print(f"  Expiry: {item.get('expiry_date', 'N/A')}")
+                print(f"  MRP: {item.get('mrp', 'N/A')}")
+                print(f"  Quantity: {item.get('quantity', 'N/A')}")
+                
+                # Clear item from memory after printing
+                if i % 100 == 0:
+                    gc.collect()
     
-    json_path = save_to_json(invoice_data, file_path)
-    print(f"Results saved to: {json_path}")
-    
-    # Print results
-    if isinstance(invoice_data, dict):
-        # It's a dictionary
-        items_count = len(invoice_data.get('items', []))
-        items = invoice_data.get('items', [])
-        print(f"\nExtracted {items_count} items from {file_path}:")
-        for i, item in enumerate(items, 1):
-            print(f"\nItem {i}:")
-            print(f"  Product: {item.get('product_name', 'N/A')}")
-            print(f"  Batch Number: {item.get('batch_number', 'N/A')}")
-            print(f"  Expiry: {item.get('expiry_date', 'N/A')}")
-            print(f"  MRP: {item.get('mrp', 'N/A')}")
-            print(f"  Quantity: {item.get('quantity', 'N/A')}")
-    else:
-        # It's an object (likely a Pydantic model)
-        items_count = len(invoice_data.items) if hasattr(invoice_data, 'items') else 0
-        print(f"\nExtracted {items_count} items from {file_path}:")
-        for i, item in enumerate(invoice_data.items if hasattr(invoice_data, 'items') else [], 1):
-            print(f"\nItem {i}:")
-            print(f"  Product: {getattr(item, 'product_name', 'N/A')}")
-            print(f"  Batch Number: {getattr(item, 'batch_number', 'N/A')}")
-            print(f"  Expiry: {getattr(item, 'expiry_date', 'N/A')}")
-            print(f"  MRP: {getattr(item, 'mrp', 'N/A')}")
-            print(f"  Quantity: {getattr(item, 'quantity', 'N/A')}")
-    return json_path
+    finally:
+        # Cleanup temporary files
+        for temp_file in temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary file {temp_file}: {str(e)}")
+        
+        # Final garbage collection
+        gc.collect()
 
 def main():
     """Main function to parse arguments and process files."""
