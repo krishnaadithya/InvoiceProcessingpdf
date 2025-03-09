@@ -12,10 +12,41 @@ from PIL import Image
 from dotenv import load_dotenv
 import gc
 from itertools import islice
-
+import time
+from process.invoice_prompts import (
+    get_header_extraction_prompt,
+    get_pdf_first_page_prompt,
+    get_pdf_subsequent_page_prompt
+)
 
 load_dotenv()
 
+# Rate limiter class for API calls
+class RateLimiter:
+    """Rate limiter for API calls to prevent exceeding quota."""
+    def __init__(self, max_calls_per_minute: int = 15):
+        self.max_calls_per_minute = max_calls_per_minute
+        self.calls = []
+        
+    def wait_if_needed(self):
+        """Wait if we're exceeding the rate limit."""
+        current_time = time.time()
+        # Remove calls older than 1 minute
+        self.calls = [t for t in self.calls if current_time - t < 60]
+        
+        if len(self.calls) >= self.max_calls_per_minute:
+            # Wait until we can make another call
+            oldest_call = self.calls[0]
+            sleep_time = 60 - (current_time - oldest_call)
+            if sleep_time > 0:
+                logging.info(f"Rate limit reached. Waiting for {sleep_time:.2f} seconds")
+                time.sleep(sleep_time)
+            
+        # Record this call
+        self.calls.append(time.time())
+
+# Create a global rate limiter instance
+rate_limiter = RateLimiter(max_calls_per_minute=15)
 
 class InvoiceItem(BaseModel):
     """Represents a single item in an invoice."""
@@ -62,17 +93,14 @@ def extract_headers(client: genai.Client, image_path: str, model_id: str) -> Lis
     Returns:
         List of column headers
     """
-    header_prompt = """
-    Extract only the column headers from this invoice table.
-    Return them exactly as they appear, maintaining their order from left to right.
-    Only extract the headers, not any data from the rows.
-    """
-    
-    image_file = client.files.upload(
-        file=image_path, 
-        config={'display_name': 'invoice_header_page'}
-    )
+    # Use the imported prompt function
+    header_prompt = get_header_extraction_prompt()
 
+    image_file = Image.open(image_path)
+    
+    # Apply rate limiting before making the API call
+    rate_limiter.wait_if_needed()
+    
     response = client.models.generate_content(
         model=model_id,
         contents=[header_prompt, image_file],
@@ -151,26 +179,16 @@ def process_single_page(
         # First page: extract headers
         if idx == 0:
             headers = extract_headers(client, image_path, model_id)
-            prompt = """
-            Extract product details from this invoice table.
-            Use the exact column headers you see in the table.
-            """
+            prompt = get_pdf_first_page_prompt()
         else:
-            headers_str = ", ".join(headers)
-            prompt = f"""
-            Extract product details from this invoice table.
-            This is page {idx + 1} of the same invoice.
-            Use these column headers: {headers_str}
-            Ensure the extracted data aligns with these columns in order.
-            """
+            prompt = get_pdf_subsequent_page_prompt(idx, headers)
         
-        # Process image with the API
-        with open(image_path, 'rb') as img_file:
-            image_file = client.files.upload(
-                file=img_file,
-                config={'display_name': f'invoice_page_{idx+1}'}
-            )
-        
+      
+        image_file = Image.open(image_path)
+
+        # Apply rate limiting before making the API call
+        rate_limiter.wait_if_needed()
+
         response = client.models.generate_content(
             model=model_id,
             contents=[prompt, image_file],
@@ -180,6 +198,7 @@ def process_single_page(
             }
         )
         
+
         items = response.parsed.items if response.parsed and response.parsed.items else []
         
         # Clean up response object
@@ -288,7 +307,7 @@ def main():
     
     try:
         invoice_data = process_pdf_with_headers(
-            "/Users/krishnaadithya/Desktop/dev/invoice_processing_2.0/pdf_only/expiry_invoice/DR REDDYS PE 1194.pdf",
+            "/Users/krishnaadithya/Desktop/dev/invoiceprocessing/InvoiceProcessingpdf/expiry_invoice/DR REDDYS PE 1194.pdf",
             max_workers=3,  # Adjust based on your system and API limits
             batch_size=2  # Adjust based on your system and API limits
         )

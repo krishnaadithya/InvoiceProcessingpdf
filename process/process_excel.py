@@ -8,10 +8,39 @@ from google import genai
 from typing import List, Dict, Any, Optional, Tuple
 import logging
 from pathlib import Path
+import time
+from process.invoice_prompts import get_extraction_prompt
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Rate limiter class for API calls
+class RateLimiter:
+    """Rate limiter for API calls to prevent exceeding quota."""
+    def __init__(self, max_calls_per_minute: int = 15):
+        self.max_calls_per_minute = max_calls_per_minute
+        self.calls = []
+        
+    def wait_if_needed(self):
+        """Wait if we're exceeding the rate limit."""
+        current_time = time.time()
+        # Remove calls older than 1 minute
+        self.calls = [t for t in self.calls if current_time - t < 60]
+        
+        if len(self.calls) >= self.max_calls_per_minute:
+            # Wait until we can make another call
+            oldest_call = self.calls[0]
+            sleep_time = 60 - (current_time - oldest_call)
+            if sleep_time > 0:
+                logger.info(f"Rate limit reached. Waiting for {sleep_time:.2f} seconds")
+                time.sleep(sleep_time)
+            
+        # Record this call
+        self.calls.append(time.time())
+
+# Create a global rate limiter instance
+rate_limiter = RateLimiter(max_calls_per_minute=15)
 
 
 def setup_environment() -> None:
@@ -50,36 +79,16 @@ def process_chunk(chunk_info: Tuple[int, pd.DataFrame, int, int], client: genai.
     """
     i, chunk_df, start_idx, end_idx = chunk_info
     
-    # Create a structured extraction prompt for the specific chunk
-    extraction_prompt = f"""
-    Extract product information from rows {start_idx} to {end_idx-1} in this Excel data.
-
-    For each product row, extract:
-    1. Product name
-    2. Batch number
-    3. Expiry date (MM/YY format)
-    4. MRP (Maximum Retail Price)
-    5. Quantity (as integer)
-    
-    Return ONLY a JSON array of objects, one for each product, with these properties:
-    [
-      {{
-        "product_name": "...",
-        "batch_number": "...",
-        "expiry_date": "...",
-        "mrp": "...",
-        "quantity": ...
-      }},
-      ...
-    ]
-    
-    Use null for any value you cannot extract. Return ONLY the JSON array.
-    """
+    # Use the imported prompt function
+    extraction_prompt = get_extraction_prompt(start_idx, end_idx)
     
     chunk_items = []
     
     # Process chunk
     try:
+        # Apply rate limiting before making the API call
+        rate_limiter.wait_if_needed()
+        
         chunk_response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=[extraction_prompt, chunk_df.to_string()],
@@ -134,7 +143,7 @@ def prepare_chunks(df: pd.DataFrame, chunk_size: int) -> List[Tuple[int, pd.Data
     return chunks_to_process
 
 
-def process_excel_file(file_path: str, output_path: str, chunk_size: int = 20, max_workers: int = 2) -> Dict[str, Any]:
+def process_excel_file(file_path: str, output_path: str, chunk_size: int = 40, max_workers: int = 2) -> Dict[str, Any]:
     """
     Process an Excel file to extract product information using Gemini API.
     
@@ -204,7 +213,7 @@ def main() -> None:
     result = process_excel_file(
         file_path=input_file,
         output_path=output_file,
-        chunk_size=20,
+        chunk_size=100,
         max_workers=2
     )
     

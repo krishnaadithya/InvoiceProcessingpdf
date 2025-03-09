@@ -91,20 +91,24 @@ def save_to_json(invoice_data, input_file_path: str) -> str:
     logger.info(f"Saved invoice data to {output_file_path}")
     return output_file_path
 
-def process_file(file_path: str) -> None:
+def process_file(file_path: str) -> str:
     """
     Process an invoice file (PDF, Excel, or Document) and print the extracted data.
     
     Args:
         file_path: Path to the invoice file
+        
+    Returns:
+        str: Path to the generated JSON file, or empty string if processing failed
     """
     temp_files = []  # Keep track of temporary files for cleanup
+    json_path = ""  # Initialize json_path to empty string
     
     try:
         file_path = os.path.abspath(file_path)
         if not os.path.exists(file_path):
             logger.error(f"File not found: {file_path}")
-            return
+            return json_path
         
         file_ext = os.path.splitext(file_path)[1].lower()
         temp_pdf_path = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf').name
@@ -123,7 +127,7 @@ def process_file(file_path: str) -> None:
             result = process_excel_file(
                 file_path=file_path,
                 output_path=output_json_path,
-                chunk_size=20,
+                chunk_size=100,
                 max_workers=2
             )
             
@@ -156,7 +160,7 @@ def process_file(file_path: str) -> None:
                 
             except Exception as e:
                 logger.error(f"Error processing PDF with headers: {str(e)}")
-                return
+                return json_path
                 
         elif file_ext in ['.doc', '.docx', '.txt']:
             # Process Document file by first converting to PDF
@@ -182,12 +186,12 @@ def process_file(file_path: str) -> None:
                 
             except Exception as e:
                 logger.error(f"Error converting {file_ext} to PDF: {str(e)}")
-                return
+                return json_path
             
         else:
             logger.error(f"Unsupported file format: {file_ext}")
             logger.error("Supported formats: .pdf, .xlsx, .xls, .doc, .docx, .txt")
-            return
+            return json_path
         
         # Save results and clean up
         json_path = save_to_json(invoice_data, file_path)
@@ -197,23 +201,29 @@ def process_file(file_path: str) -> None:
         invoice_data = None
         gc.collect()
         
+        '''
         # Print results from the saved JSON file to avoid keeping data in memory
-        with open(json_path, 'r', encoding='utf-8') as f:
-            saved_data = json.load(f)
-            items_count = len(saved_data.get('items', []))
-            print(f"\nExtracted {items_count} items from {file_path}:")
-            
-            for i, item in enumerate(saved_data.get('items', []), 1):
-                print(f"\nItem {i}:")
-                print(f"  Product: {item.get('product_name', 'N/A')}")
-                print(f"  Batch Number: {item.get('batch_number', 'N/A')}")
-                print(f"  Expiry: {item.get('expiry_date', 'N/A')}")
-                print(f"  MRP: {item.get('mrp', 'N/A')}")
-                print(f"  Quantity: {item.get('quantity', 'N/A')}")
+        if os.path.exists(json_path):
+            with open(json_path, 'r', encoding='utf-8') as f:
+                saved_data = json.load(f)
+                items_count = len(saved_data.get('items', []))
+                print(f"\nExtracted {items_count} items from {file_path}:")
                 
-                # Clear item from memory after printing
-                if i % 100 == 0:
-                    gc.collect()
+                for i, item in enumerate(saved_data.get('items', []), 1):
+                    print(f"\nItem {i}:")
+                    print(f"  Product: {item.get('product_name', 'N/A')}")
+                    print(f"  Batch Number: {item.get('batch_number', 'N/A')}")
+                    print(f"  Expiry: {item.get('expiry_date', 'N/A')}")
+                    print(f"  MRP: {item.get('mrp', 'N/A')}")
+                    print(f"  Quantity: {item.get('quantity', 'N/A')}")
+                    
+                    # Clear item from memory after printing
+                    if i % 100 == 0:
+                        gc.collect()
+        '''
+
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
     
     finally:
         # Cleanup temporary files
@@ -226,6 +236,8 @@ def process_file(file_path: str) -> None:
         
         # Final garbage collection
         gc.collect()
+    
+    return json_path
 
 def main():
     """Main function to parse arguments and process files."""

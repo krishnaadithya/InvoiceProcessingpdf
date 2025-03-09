@@ -139,12 +139,14 @@ def process_invoice_file(
     json_path = process_file(file_path)
     
     # Try to read the JSON file that was created
-    if os.path.exists(json_path):
+    if json_path and os.path.exists(json_path):
         import json
         with open(json_path, 'r', encoding='utf-8') as f:
             invoice_data = json.load(f)
     else:
-        return {}, "", "Failed to process file. No output data found.", None, pdf_path
+        error_message = "Failed to process file. No output data found."
+        logger.error(error_message)
+        return {}, "", error_message, None, pdf_path
     
     # Create a DataFrame for display
     items = invoice_data.get('items', [])
