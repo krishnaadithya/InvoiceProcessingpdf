@@ -62,6 +62,7 @@ def get_pdf_first_page_prompt() -> str:
     return """
     Extract product details from this invoice table.
     Use the exact column headers you see in the table.
+
     """
 
 def get_pdf_subsequent_page_prompt(page_idx: int, headers: List[str]) -> str:
@@ -81,6 +82,21 @@ def get_pdf_subsequent_page_prompt(page_idx: int, headers: List[str]) -> str:
     This is page {page_idx + 1} of the same invoice.
     Use these column headers: {headers_str}
     Ensure the extracted data aligns with these columns in order.
+
+    Return ONLY a JSON array of objects, one for each product, with these properties:
+    [
+      {{
+        "product_name": "...",
+        "batch_number": "...",
+        "expiry_date": "...",
+        "mrp": "...",
+        "quantity": ...
+      }},
+      ...
+    ]
+    
+    Use null for any value you cannot extract. Return ONLY the JSON array.
+
     """
 
 def get_custom_invoice_prompt(invoice_type: str, headers: Optional[List[str]] = None) -> str:

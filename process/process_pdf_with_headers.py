@@ -50,8 +50,8 @@ rate_limiter = RateLimiter(max_calls_per_minute=15)
 
 class InvoiceItem(BaseModel):
     """Represents a single item in an invoice."""
-    product_name: str = Field(description="The name of the product")
-    batch_number: str = Field(description="The batch number of the product")
+    product_name: str = Field(description="The name of the product, example: `MINTOP SOLUTION`, `ACE PROXYVON (NEW)`, `ACOTRUST 100MG TAB`")
+    batch_number: str = Field(description="The batch number of the product, example: ZL10012, 3004509058CBF491, 30049099D210448, E001115")
     expiry_date: str = Field(description="The expiry date (format: MM/YY)")
     mrp: str = Field(description="Maximum Retail Price")
     quantity: int = Field(description="Product quantity")
@@ -179,7 +179,9 @@ def process_single_page(
         # First page: extract headers
         if idx == 0:
             headers = extract_headers(client, image_path, model_id)
-            prompt = get_pdf_first_page_prompt()
+            #prompt = get_pdf_first_page_prompt(headers)
+            prompt = get_pdf_subsequent_page_prompt(idx, headers)
+
         else:
             prompt = get_pdf_subsequent_page_prompt(idx, headers)
         
