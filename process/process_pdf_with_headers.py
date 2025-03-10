@@ -51,9 +51,9 @@ rate_limiter = RateLimiter(max_calls_per_minute=15)
 class InvoiceItem(BaseModel):
     """Represents a single item in an invoice."""
     product_name: str = Field(description="The name of the product, example: `MINTOP SOLUTION`, `ACE PROXYVON (NEW)`, `ACOTRUST 100MG TAB`")
-    batch_number: str = Field(description="The batch number of the product, example: ZL10012, 3004509058CBF491, 30049099D210448, E001115")
+    batch_number: str = Field(description="The batch number of the product, example: ZL10012, PPQAL26, AJ10152, E001115")
     expiry_date: str = Field(description="The expiry date (format: MM/YY)")
-    mrp: str = Field(description="Maximum Retail Price")
+    mrp: str = Field(description="Maximum Retail Price (MRP)")
     quantity: int = Field(description="Product quantity")
 
 class InvoiceData(BaseModel):
